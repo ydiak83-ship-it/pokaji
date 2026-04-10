@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Pokaji</h1>
+      <p class="subtitle">Покажи, а не рассказывай</p>
+    </div>
+
+    <!-- Auth screen -->
+    <div id="auth-screen" class="screen">
+      <p>Войдите, чтобы начать запись</p>
+      <button id="btn-login" class="btn btn-primary">Войти</button>
+    </div>
+
+    <!-- Record screen -->
+    <div id="record-screen" class="screen hidden">
+      <div class="record-options">
+        <button id="btn-screen" class="option-btn" data-mode="screen">
+          <span class="icon">🖥</span>
+          <span>Экран</span>
+        </button>
+        <button id="btn-screen-cam" class="option-btn" data-mode="screen-cam">
+          <span class="icon">🖥+📷</span>
+          <span>Экран + камера</span>
+        </button>
+        <button id="btn-cam" class="option-btn" data-mode="cam">
+          <span class="icon">📷</span>
+          <span>Камера</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Recording screen -->
+    <div id="recording-screen" class="screen hidden">
+      <div class="timer" id="timer">00:00</div>
+      <div class="controls">
+        <button id="btn-pause" class="btn btn-secondary">Пауза</button>
+        <button id="btn-stop" class="btn btn-danger">Стоп</button>
+      </div>
+    </div>
+
+    <!-- Uploading screen -->
+    <div id="uploading-screen" class="screen hidden">
+      <div class="spinner"></div>
+      <p>Загрузка...</p>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+    </div>
+
+    <!-- Done screen -->
+    <div id="done-screen" class="screen hidden">
+      <p class="success">Готово!</p>
+      <div class="link-box">
+        <input type="text" id="video-link" readonly>
+        <button id="btn-copy" class="btn btn-primary">Копировать</button>
+      </div>
+      <button id="btn-new" class="btn btn-secondary">Новая запись</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

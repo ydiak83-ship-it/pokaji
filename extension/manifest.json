@@ -12,6 +12,8 @@
   ],
   "host_permissions": [
     "https://gopokaji.ru/*",
+    "https://s3.twcstorage.ru/*",
+    "https://*.twcstorage.ru/*",
     "http://localhost:8000/*"
   ],
   "action": {

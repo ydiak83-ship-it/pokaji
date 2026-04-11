@@ -8,13 +8,14 @@ from pathlib import Path
 import httpx
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
+from jose import JWTError, jwt
+from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Populated by app lifespan (app/main.py) — shared across requests
 http_client: httpx.AsyncClient | None = None
-from fastapi.responses import StreamingResponse
-from jose import JWTError, jwt
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.utils import enforce_plan_expiry, get_current_user
 from app.config import settings
@@ -23,6 +24,8 @@ from app.models import User, Video
 from app.schemas import VideoResponse, VideoUpdate
 from app.videos.service import (
     delete_from_s3,
+    download_from_s3,
+    generate_presigned_put_url,
     generate_slug,
     get_presigned_url,
     process_uploaded_video,
@@ -151,6 +154,143 @@ async def upload_video(
         id=video_id,
         user_id=user.id,
         slug=slug,
+        file_key=file_key,
+        thumbnail_key=thumb_key,
+        duration=duration,
+        status="ready",
+        reply_to_id=reply_to_id,
+    )
+    db.add(video)
+    user.videos_this_period += 1
+    await db.commit()
+    await db.refresh(video)
+
+    return _video_to_response(video)
+
+
+class InitUploadResponse(BaseModel):
+    video_id: str
+    upload_url: str
+    upload_key: str
+
+
+class FinalizeUploadRequest(BaseModel):
+    video_id: uuid.UUID
+    upload_key: str
+    reply_to_slug: str | None = None
+    title: str | None = None
+
+
+@router.post("/init-upload", response_model=InitUploadResponse)
+async def init_upload(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> InitUploadResponse:
+    """Issue a presigned PUT URL so the client can upload directly to S3,
+    bypassing Cloudflare Tunnel's 100 MB request limit."""
+    await enforce_plan_expiry(user, db)
+
+    now = datetime.now(timezone.utc)
+    period_started = user.period_started_at
+    if period_started.tzinfo is None:
+        period_started = period_started.replace(tzinfo=timezone.utc)
+    if now - period_started > timedelta(days=30):
+        user.videos_this_period = 0
+        user.period_started_at = now
+        await db.commit()
+
+    lifetime = settings.is_lifetime(user.email)
+    if not lifetime and user.plan == "free" and user.videos_this_period >= FREE_VIDEO_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Бесплатный тариф: лимит {FREE_VIDEO_LIMIT} видео в месяц исчерпан. Обновите до Pro.",
+        )
+
+    video_id = uuid.uuid4()
+    upload_key = f"uploads/{user.id}/{video_id}.webm"
+    upload_url = generate_presigned_put_url(upload_key, content_type="video/webm")
+
+    return InitUploadResponse(
+        video_id=str(video_id),
+        upload_url=upload_url,
+        upload_key=upload_key,
+    )
+
+
+@router.post("/finalize-upload", response_model=VideoResponse, status_code=status.HTTP_201_CREATED)
+async def finalize_upload(
+    data: FinalizeUploadRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> VideoResponse:
+    """After direct S3 upload, download the webm, transcode, and create the DB record."""
+    expected_prefix = f"uploads/{user.id}/"
+    if not data.upload_key.startswith(expected_prefix):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid upload key")
+
+    await enforce_plan_expiry(user, db)
+    lifetime = settings.is_lifetime(user.email)
+
+    if not lifetime and user.plan == "free" and user.videos_this_period >= FREE_VIDEO_LIMIT:
+        try:
+            delete_from_s3(data.upload_key)
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Бесплатный тариф: лимит {FREE_VIDEO_LIMIT} видео в месяц исчерпан.",
+        )
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        webm_path = Path(tmp_dir) / "upload.webm"
+        try:
+            download_from_s3(data.upload_key, webm_path)
+        except Exception as err:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Файл не найден в хранилище. Попробуйте загрузить заново.",
+            ) from err
+
+        try:
+            file_key, thumb_key, duration = process_uploaded_video(
+                webm_path, str(user.id), str(data.video_id)
+            )
+        except Exception as err:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Ошибка обработки видео",
+            ) from err
+
+    # Clean up the temporary webm
+    try:
+        delete_from_s3(data.upload_key)
+    except Exception:
+        pass
+
+    # Duration limit for free users — clean up and reject
+    if not lifetime and user.plan == "free" and duration > FREE_MAX_DURATION_SEC:
+        delete_from_s3(file_key)
+        delete_from_s3(thumb_key)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Free plan limited to {FREE_MAX_DURATION_SEC // 60} minute videos.",
+        )
+
+    reply_to_id = None
+    if data.reply_to_slug:
+        reply_result = await db.execute(
+            select(Video).where(Video.slug == data.reply_to_slug, Video.is_public.is_(True))
+        )
+        original = reply_result.scalar_one_or_none()
+        if original:
+            reply_to_id = original.id
+
+    slug = generate_slug()
+    video = Video(
+        id=data.video_id,
+        user_id=user.id,
+        slug=slug,
+        title=data.title or "Untitled",
         file_key=file_key,
         thumbnail_key=thumb_key,
         duration=duration,

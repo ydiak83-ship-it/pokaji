@@ -45,6 +45,26 @@ def get_presigned_url(s3_key: str, expires_in: int = 3600) -> str:
     )
 
 
+def generate_presigned_put_url(
+    s3_key: str, content_type: str = "video/webm", expires_in: int = 3600
+) -> str:
+    client = get_s3_client()
+    return client.generate_presigned_url(
+        "put_object",
+        Params={
+            "Bucket": settings.s3_bucket,
+            "Key": s3_key,
+            "ContentType": content_type,
+        },
+        ExpiresIn=expires_in,
+    )
+
+
+def download_from_s3(s3_key: str, dest_path: Path) -> None:
+    client = get_s3_client()
+    client.download_file(settings.s3_bucket, s3_key, str(dest_path))
+
+
 def delete_from_s3(s3_key: str) -> None:
     client = get_s3_client()
     client.delete_object(Bucket=settings.s3_bucket, Key=s3_key)
@@ -58,6 +78,8 @@ def transcode_video(input_path: Path, output_path: Path) -> float:
         "-c:v", "libx264",
         "-preset", "fast",
         "-crf", "28",
+        "-profile:v", "high",
+        "-level:v", "4.1",
         "-vf", "scale=-2:720",
         "-c:a", "aac",
         "-b:a", "128k",

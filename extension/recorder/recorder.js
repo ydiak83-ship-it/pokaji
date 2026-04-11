@@ -462,24 +462,46 @@ async function uploadVideo(blob) {
   const { token } = await chrome.storage.local.get(["token"]);
   if (!token) throw new Error("Не авторизован");
 
-  const formData = new FormData();
-  formData.append("file", blob, "recording.webm");
-  if (replyToSlug) {
-    formData.append("reply_to_slug", replyToSlug);
-  }
-
-  const response = await fetch(`${API_URL}/api/videos/upload`, {
+  // Step 1 — ask backend for a presigned S3 PUT URL
+  const initResp = await fetch(`${API_URL}/api/videos/init-upload`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-    body: formData,
   });
+  if (!initResp.ok) {
+    const error = await initResp.json().catch(() => ({ detail: "Init failed" }));
+    throw new Error(error.detail || `HTTP ${initResp.status}`);
+  }
+  const { video_id, upload_url, upload_key } = await initResp.json();
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Upload failed" }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
+  // Step 2 — upload the blob directly to S3 (bypasses Cloudflare 100 MB limit)
+  const putResp = await fetch(upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": "video/webm" },
+    body: blob,
+  });
+  if (!putResp.ok) {
+    throw new Error(`Не удалось загрузить файл в хранилище (${putResp.status})`);
   }
 
-  return response.json();
+  // Step 3 — tell backend to transcode and create the DB record
+  const finalizeResp = await fetch(`${API_URL}/api/videos/finalize-upload`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      video_id,
+      upload_key,
+      reply_to_slug: replyToSlug || null,
+    }),
+  });
+  if (!finalizeResp.ok) {
+    const error = await finalizeResp.json().catch(() => ({ detail: "Finalize failed" }));
+    throw new Error(error.detail || `HTTP ${finalizeResp.status}`);
+  }
+
+  return finalizeResp.json();
 }
 
 window.addEventListener("beforeunload", (e) => {

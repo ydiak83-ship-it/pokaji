@@ -66,36 +66,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "chooseDesktopMedia") {
-    // Picker must be tied to a tab; use the active tab in the last focused normal window
-    chrome.windows.getAll({ populate: true, windowTypes: ["normal"] }, (wins) => {
-      let targetTab = null;
-      for (const w of wins) {
-        if (w.focused) {
-          targetTab = (w.tabs || []).find((t) => t.active);
-          if (targetTab) break;
+    // Picker is attached to the sender tab (our recorder popup) so the
+    // system dialog appears over the recorder window and no other tab
+    // steals focus.
+    const sources = ["screen", "window", "audio"];
+    const senderTab = sender.tab;
+    const invoke = (tab) => {
+      chrome.desktopCapture.chooseDesktopMedia(sources, tab, (streamId, options) => {
+        if (!streamId) {
+          sendResponse({ streamId: null, error: "cancelled" });
+          return;
         }
-      }
-      if (!targetTab) {
-        for (const w of wins) {
-          targetTab = (w.tabs || []).find((t) => t.active);
-          if (targetTab) break;
-        }
-      }
-      const sources = ["screen", "window", "tab", "audio"];
-      const requestId = chrome.desktopCapture.chooseDesktopMedia(
-        sources,
-        targetTab,
-        (streamId, options) => {
-          if (!streamId) {
-            sendResponse({ streamId: null, error: "cancelled" });
-            return;
-          }
-          sendResponse({ streamId, canRequestAudioTrack: !!options?.canRequestAudioTrack });
-        }
-      );
-      // If sender closes before callback fires, cancel the picker
-      // (no-op if already completed)
-    });
+        sendResponse({ streamId, canRequestAudioTrack: !!options?.canRequestAudioTrack });
+      });
+    };
+    if (senderTab) {
+      invoke(senderTab);
+    } else {
+      // Fallback: pick any active tab in the focused window
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => invoke(tabs[0]));
+    }
     return true;
   }
 

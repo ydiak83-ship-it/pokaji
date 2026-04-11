@@ -4,9 +4,11 @@
   "description": "Запиши экран, получи ссылку, поделись. Бесплатная альтернатива Loom.",
   "version": "0.1.0",
   "permissions": [
-    "tabCapture",
-    "offscreen",
-    "storage"
+    "storage",
+    "notifications",
+    "tabs",
+    "windows",
+    "desktopCapture"
   ],
   "host_permissions": [
     "https://gopokaji.ru/*",
@@ -18,6 +20,15 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "toggle-recording": {
+      "suggested_key": {
+        "default": "Alt+Shift+P",
+        "mac": "Alt+Shift+P"
+      },
+      "description": "Начать/остановить запись экрана"
     }
   },
   "background": {

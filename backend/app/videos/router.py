@@ -16,7 +16,7 @@ from jose import JWTError, jwt
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.utils import get_current_user
+from app.auth.utils import enforce_plan_expiry, get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models import User, Video
@@ -78,6 +78,9 @@ async def upload_video(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> VideoResponse:
+    # Enforce plan expiry before checking limits
+    await enforce_plan_expiry(user, db)
+
     # Reset monthly counter if 30 days passed
     now = datetime.now(timezone.utc)
     period_started = user.period_started_at
@@ -99,16 +102,19 @@ async def upload_video(
     video_id = uuid.uuid4()
     slug = generate_slug()
 
-    # Save uploaded file to temp
+    # Stream uploaded file to disk — avoids loading up to 500 MB into RAM
+    max_bytes = settings.upload_max_size_mb * 1024 * 1024
     with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
-        content = await file.read()
-        max_bytes = settings.upload_max_size_mb * 1024 * 1024
-        if len(content) > max_bytes:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"Файл слишком большой. Максимум {settings.upload_max_size_mb} МБ.",
-            )
-        tmp.write(content)
+        received = 0
+        async for chunk in file:
+            received += len(chunk)
+            if received > max_bytes:
+                Path(tmp.name).unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"Файл слишком большой. Максимум {settings.upload_max_size_mb} МБ.",
+                )
+            tmp.write(chunk)
         tmp_path = Path(tmp.name)
 
     try:

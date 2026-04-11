@@ -9,15 +9,13 @@ PLANS = {
     "team": {"amount": "990.00", "description": "Pokaji Команда — ежемесячная подписка"},
 }
 
-
-def configure_yookassa() -> None:
-    Configuration.account_id = settings.yookassa_shop_id
-    Configuration.secret_key = settings.yookassa_secret_key
+# Configure once at import time — yookassa globals are process-wide
+Configuration.account_id = settings.yookassa_shop_id
+Configuration.secret_key = settings.yookassa_secret_key
 
 
 def create_payment(plan: str, user_id: uuid.UUID) -> dict[str, str]:
     """Create a YooKassa payment. Returns payment URL and payment ID."""
-    configure_yookassa()
 
     if plan not in PLANS:
         raise ValueError(f"Unknown plan: {plan}")
@@ -46,8 +44,6 @@ def create_payment(plan: str, user_id: uuid.UUID) -> dict[str, str]:
 
 def check_payment(payment_id: str) -> dict[str, str]:
     """Check payment status. Returns status and metadata."""
-    configure_yookassa()
-
     payment = Payment.find_one(payment_id)
 
     return {

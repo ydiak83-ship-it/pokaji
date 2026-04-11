@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,6 +9,8 @@ from app.auth.router import router as auth_router
 from app.config import settings
 from app.database import engine
 from app.models import Base
+from app.payments.router import router as payments_router
+from app.videos import router as videos_router_module
 from app.videos.router import router as videos_router
 
 
@@ -15,7 +18,12 @@ from app.videos.router import router as videos_router
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    yield
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=10.0, read=3600.0, write=None, pool=10.0)
+    ) as client:
+        videos_router_module.http_client = client
+        yield
 
 
 app = FastAPI(title="Pokaji API", version="0.1.0", lifespan=lifespan)
@@ -30,6 +38,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(videos_router)
+app.include_router(payments_router)
 
 
 @app.get("/api/health")

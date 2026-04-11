@@ -8,6 +8,9 @@ from pathlib import Path
 import httpx
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
+
+# Populated by app lifespan (app/main.py) — shared across requests
+http_client: httpx.AsyncClient | None = None
 from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import func, select
@@ -37,6 +40,14 @@ FREE_VIDEO_LIMIT = 25
 FREE_MAX_DURATION_SEC = 300  # 5 minutes
 
 
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    if not domain:
+        return email
+    masked = local[0] + "***" + local[-1] if len(local) > 2 else local
+    return f"{masked}@{domain}"
+
+
 def _video_to_response(
     video: Video,
     replies_count: int = 0,
@@ -56,7 +67,7 @@ def _video_to_response(
         video_url=video_url,
         created_at=video.created_at,
         replies_count=replies_count,
-        author_email=author_email,
+        author_email=_mask_email(author_email) if author_email else None,
     )
 
 
@@ -267,7 +278,9 @@ async def stream_video(
         finally:
             await resp.aclose()
 
-    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=3600.0, write=None, pool=10.0))
+    client = http_client or httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=10.0, read=3600.0, write=None, pool=10.0)
+    )
     req = client.build_request("GET", presigned_url, headers=forward_headers)
     resp = await client.send(req, stream=True)
 

@@ -106,7 +106,10 @@ async def upload_video(
     max_bytes = settings.upload_max_size_mb * 1024 * 1024
     with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
         received = 0
-        async for chunk in file:
+        while True:
+            chunk = await file.read(1024 * 1024)  # 1 MB
+            if not chunk:
+                break
             received += len(chunk)
             if received > max_bytes:
                 Path(tmp.name).unlink(missing_ok=True)

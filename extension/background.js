@@ -73,10 +73,15 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 // Clicking the "Запись идёт" notification also stops the recording
-chrome.notifications.onClicked.addListener((notifId) => {
+chrome.notifications.onClicked.addListener(async (notifId) => {
   if (notifId !== "pokaji-recording") return;
-  chrome.runtime.sendMessage({ action: "stopRecording" }).catch(() => {});
   chrome.notifications.clear(notifId).catch(() => {});
+  if (await isRecorderWindowAlive()) {
+    chrome.runtime.sendMessage({ action: "stopRecording" }).catch(() => {});
+  } else {
+    // Stale notification — recorder crashed or was closed without cleanup
+    await chrome.storage.local.remove(["recordingStartedAt"]);
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

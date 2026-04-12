@@ -422,7 +422,9 @@ async function startCapture(mode) {
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       activeStreams.push(micStream);
-    } catch {}
+    } catch (e) {
+      console.warn("[recorder] microphone unavailable:", e);
+    }
 
     const audioTracks = [];
     if (micStream && screenStream.getAudioTracks().length > 0) {
@@ -600,6 +602,9 @@ async function stopRecording(upload = true) {
   showScreen("uploading");
 
   if (!mediaRecorder || mediaRecorder.state === "inactive") {
+    // Nothing left to stop the normal way — tear everything down by hand
+    // so streams, worker and AudioContext don't leak
+    cleanup();
     if (upload) showError("Запись не активна");
     return;
   }

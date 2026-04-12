@@ -16,14 +16,15 @@ let latestCamFrame = null;
 // { x, y, w, h } in canvas (device) pixels — where the PiP window is in the
 // captured screen stream. Updated via postMessage from the main thread.
 let pipPos = null;
+let camReader = null;
 const offscreen = new OffscreenCanvas(1, 1);
 const ctx = offscreen.getContext("2d");
 
 async function pumpCam(readable) {
-  const reader = readable.getReader();
+  camReader = readable.getReader();
   try {
     while (running) {
-      const result = await reader.read();
+      const result = await camReader.read();
       if (result.done || !result.value) return;
       const old = latestCamFrame;
       latestCamFrame = result.value;
@@ -38,6 +39,7 @@ async function pumpCam(readable) {
       try { latestCamFrame.close(); } catch {}
       latestCamFrame = null;
     }
+    camReader = null;
   }
 }
 
@@ -162,6 +164,11 @@ self.onmessage = (e) => {
     pipPos = msg.pos;
   } else if (msg.type === "stop") {
     running = false;
+    // Cancel the reader so the in-flight `reader.read()` in pumpCam resolves
+    // immediately instead of holding an unclosed frame until termination
+    if (camReader) {
+      try { camReader.cancel(); } catch {}
+    }
     if (latestCamFrame) {
       try { latestCamFrame.close(); } catch {}
       latestCamFrame = null;

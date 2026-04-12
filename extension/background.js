@@ -41,11 +41,18 @@ chrome.windows.onRemoved.addListener((windowId) => {
 });
 
 
-// Hotkey: Alt+Shift+P
+// Hotkey: Alt+Shift+P — if a recording is in progress, stop it; otherwise open recorder
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command === "toggle-recording") {
-    await openRecorderWindow();
+  if (command !== "toggle-recording") return;
+  const { recordingStartedAt } = await chrome.storage.local.get("recordingStartedAt");
+  if (recordingStartedAt) {
+    // Broadcast to any open recorder page — they will handle the stop
+    chrome.runtime.sendMessage({ action: "stopRecording" }).catch(() => {});
+    // Clear the recording-active notification if present
+    chrome.notifications.clear("pokaji-recording").catch(() => {});
+    return;
   }
+  await openRecorderWindow();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

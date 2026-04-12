@@ -29,6 +29,13 @@ chrome.storage.local.get(["replyToSlug"], (result) => {
   }
 });
 
+// Listen for stop-recording broadcast from background (hotkey while minimized)
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.action === "stopRecording" && mediaRecorder && mediaRecorder.state === "recording") {
+    stopRecording(true);
+  }
+});
+
 // Store element references once — they survive being moved to PiP window
 const timerEl = document.getElementById("timer");
 const pauseIconEl = document.getElementById("pause-icon");
@@ -155,13 +162,43 @@ document.querySelectorAll(".mode-btn").forEach((btn) => {
   btn.addEventListener("click", async () => {
     const mode = btn.dataset.mode;
     try {
+      // Hide the mode selector immediately so it can't appear in the
+      // first frames of the recording
+      showScreen("recording");
+
+      // Acquire streams and build the MediaRecorder (not started yet)
       await startCapture(mode);
-      const pipOpened = await openDocumentPiP(mode);
-      if (!pipOpened) {
-        // Fallback: compact popup window
-        showScreen("recording");
-        await resizeFallback(mode);
+
+      if (mode !== "cam" && isFullScreenCapture) {
+        // Whole-screen capture: any visible recorder UI would be baked into
+        // the video. Minimize the main popup and skip PiP entirely. User
+        // stops via Alt+Shift+P hotkey. Chrome minimized windows aren't
+        // rendered so they don't appear in the screen capture.
+        try {
+          const current = await chrome.windows.getCurrent();
+          await chrome.windows.update(current.id, { state: "minimized" });
+        } catch {}
+        // Let macOS finish the minimize animation before the recorder
+        // captures its first frame
+        await new Promise((r) => setTimeout(r, 600));
+        // Let the user know how to stop
+        try {
+          await chrome.notifications.create("pokaji-recording", {
+            type: "basic",
+            iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+            title: "Запись экрана идёт",
+            message: "Остановите запись по горячей клавише Alt+Shift+P",
+            priority: 2,
+          });
+        } catch {}
+      } else {
+        const pipOpened = await openDocumentPiP(mode);
+        if (!pipOpened) {
+          await resizeFallback(mode);
+        }
       }
+
+      mediaRecorder.start(1000);
       startTimer();
     } catch (err) {
       showError(err.message || "Не удалось начать запись");
@@ -445,7 +482,8 @@ async function startCapture(mode) {
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size > 0) recordedChunks.push(e.data);
   };
-  mediaRecorder.start(1000);
+  // NOTE: caller is responsible for mediaRecorder.start() — so the UI can
+  // be hidden/minimized first, keeping the mode selection out of the frame
 }
 
 // ─── Stop & upload ───
@@ -455,11 +493,16 @@ async function stopRecording(upload = true) {
   closePiP();
 
   try {
+    await chrome.notifications.clear("pokaji-recording");
+  } catch {}
+
+  try {
     const current = await chrome.windows.getCurrent();
     await chrome.windows.update(current.id, {
       width: 420,
       height: 300,
       state: "normal",
+      focused: true,
     });
   } catch {}
 

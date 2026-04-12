@@ -202,7 +202,11 @@ async function openDocumentPiP(mode) {
   pipWin.document.body.appendChild(recordingScreenEl);
 
   // Setup camera or screen icon
-  if ((mode === "cam" || mode === "screen-cam") && cameraPreviewStream) {
+  // IMPORTANT: in "screen-cam" mode the PiP window gets captured as part of
+  // the screen recording. If we showed the live camera feed inside it, the
+  // user would see their face twice: once in our canvas composite and once
+  // leaked through the PiP window. So only "cam" mode shows the camera here.
+  if (mode === "cam" && cameraPreviewStream) {
     cameraVideoEl.srcObject = cameraPreviewStream;
     cameraVideoEl.style.display = "block";
     screenIconEl.classList.add("hidden");
@@ -242,7 +246,10 @@ function closePiP() {
 // ─── Fallback: compact popup window ───
 
 async function resizeFallback(mode) {
-  if ((mode === "cam" || mode === "screen-cam") && cameraPreviewStream) {
+  // See openDocumentPiP — only pure "cam" mode shows the live camera preview
+  // inside the recorder window; screen-cam would leak the face into the
+  // captured screen twice.
+  if (mode === "cam" && cameraPreviewStream) {
     cameraVideoEl.srcObject = cameraPreviewStream;
     cameraVideoEl.style.display = "block";
     screenIconEl.classList.add("hidden");

@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 
 import httpx
+import redis.asyncio as aioredis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,11 +20,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=10.0, read=3600.0, write=None, pool=10.0)
-    ) as client:
-        videos_router_module.http_client = client
-        yield
+    redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=3600.0, write=None, pool=10.0)
+        ) as client:
+            videos_router_module.http_client = client
+            videos_router_module.redis_client = redis_client
+            yield
+    finally:
+        await redis_client.aclose()
 
 
 app = FastAPI(title="Pokaji API", version="0.1.0", lifespan=lifespan)

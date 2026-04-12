@@ -18,6 +18,8 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
     plan: str
+    plan_expires_at: datetime | None = None
+    videos_this_period: int
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -26,6 +28,12 @@ class UserResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class RegisterResponse(BaseModel):
+    verified: bool
+    message: str = ""
+    access_token: str | None = None  # set only when verified=True (lifetime / no SMTP)
 
 
 class VideoResponse(BaseModel):
@@ -39,6 +47,8 @@ class VideoResponse(BaseModel):
     thumbnail_url: str | None = None
     video_url: str | None = None
     created_at: datetime
+    replies_count: int = 0
+    author_email: str | None = None  # populated for replies
 
     model_config = {"from_attributes": True}
 

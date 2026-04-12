@@ -26,7 +26,7 @@ async def register(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     # Lifetime users skip email verification
-    skip_verification = settings.is_lifetime(data.email) or not settings.smtp_configured
+    skip_verification = settings.is_lifetime(data.email) or not settings.email_configured
 
     verification_token = None if skip_verification else secrets.token_urlsafe(32)
     token_expires_at = (
@@ -76,20 +76,21 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)) -> TokenRes
 
 @router.get("/verify-email")
 async def verify_email(token: str, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+    generic_error = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Ссылка неверна или устарела. Зарегистрируйтесь заново.",
+    )
     result = await db.execute(select(User).where(User.email_verification_token == token))
     user = result.scalar_one_or_none()
     if user is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неверная или устаревшая ссылка")
+        raise generic_error
 
     if user.email_verification_token_expires_at is not None:
         expires_at = user.email_verification_token_expires_at
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at < datetime.now(timezone.utc):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Ссылка истекла. Зарегистрируйтесь заново.",
-            )
+            raise generic_error
 
     user.email_verified = True
     user.email_verification_token = None

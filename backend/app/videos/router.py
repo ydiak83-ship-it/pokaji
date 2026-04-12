@@ -1,4 +1,6 @@
 import json
+import logging
+import re
 import tempfile
 import uuid
 from collections.abc import AsyncGenerator
@@ -14,9 +16,6 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Populated by app lifespan (app/main.py) — shared across requests
-http_client: httpx.AsyncClient | None = None
-
 from app.auth.utils import enforce_plan_expiry, get_current_user
 from app.config import settings
 from app.database import get_db
@@ -31,13 +30,14 @@ from app.videos.service import (
     process_uploaded_video,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
 _STREAM_TOKEN_TTL = 3600  # seconds
 
-
-async def _get_redis() -> aioredis.Redis:
-    return aioredis.from_url(settings.redis_url, decode_responses=True)
+# Populated by app lifespan (app/main.py) — shared across requests
+http_client: httpx.AsyncClient | None = None
+redis_client: aioredis.Redis | None = None
 
 FREE_VIDEO_LIMIT = 25
 FREE_MAX_DURATION_SEC = 300  # 5 minutes
@@ -78,13 +78,15 @@ def _video_to_response(
 async def upload_video(
     file: UploadFile,
     reply_to_slug: str | None = Form(None),
+    title: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> VideoResponse:
     # Enforce plan expiry before checking limits
     await enforce_plan_expiry(user, db)
 
-    # Reset monthly counter if 30 days passed
+    # Reset monthly counter if 30 days passed — commit immediately so it survives
+    # even if the heavy transcoding below fails
     now = datetime.now(timezone.utc)
     period_started = user.period_started_at
     if period_started.tzinfo is None:
@@ -92,6 +94,7 @@ async def upload_video(
     if now - period_started > timedelta(days=30):
         user.videos_this_period = 0
         user.period_started_at = now
+        await db.commit()
 
     lifetime = settings.is_lifetime(user.email)
 
@@ -154,6 +157,7 @@ async def upload_video(
         id=video_id,
         user_id=user.id,
         slug=slug,
+        title=title or "Untitled",
         file_key=file_key,
         thumbnail_key=thumb_key,
         duration=duration,
@@ -217,6 +221,9 @@ async def init_upload(
     )
 
 
+_UPLOAD_KEY_RE = re.compile(r"^uploads/[0-9a-f-]{36}/[0-9a-f-]{36}\.webm$")
+
+
 @router.post("/finalize-upload", response_model=VideoResponse, status_code=status.HTTP_201_CREATED)
 async def finalize_upload(
     data: FinalizeUploadRequest,
@@ -224,8 +231,14 @@ async def finalize_upload(
     db: AsyncSession = Depends(get_db),
 ) -> VideoResponse:
     """After direct S3 upload, download the webm, transcode, and create the DB record."""
+    # Strict regex: no path traversal, no other users' prefixes
+    if not _UPLOAD_KEY_RE.match(data.upload_key):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid upload key")
     expected_prefix = f"uploads/{user.id}/"
     if not data.upload_key.startswith(expected_prefix):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid upload key")
+    # The video_id in the JSON body must match the key (prevents key/id mismatch)
+    if data.upload_key != f"uploads/{user.id}/{data.video_id}.webm":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid upload key")
 
     await enforce_plan_expiry(user, db)
@@ -235,7 +248,7 @@ async def finalize_upload(
         try:
             delete_from_s3(data.upload_key)
         except Exception:
-            pass
+            logger.warning("Failed to delete abandoned upload %s", data.upload_key, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Бесплатный тариф: лимит {FREE_VIDEO_LIMIT} видео в месяц исчерпан.",
@@ -265,7 +278,7 @@ async def finalize_upload(
     try:
         delete_from_s3(data.upload_key)
     except Exception:
-        pass
+        logger.warning("Failed to delete temporary upload %s", data.upload_key, exc_info=True)
 
     # Duration limit for free users — clean up and reject
     if not lifetime and user.plan == "free" and duration > FREE_MAX_DURATION_SEC:
@@ -358,17 +371,15 @@ async def create_stream_token(
     if video is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
 
-    token = str(uuid.uuid4())
-    r = await _get_redis()
-    try:
-        await r.setex(
-            f"stream_token:{token}",
-            _STREAM_TOKEN_TTL,
-            json.dumps({"slug": slug, "user_id": str(user.id)}),
-        )
-    finally:
-        await r.aclose()
+    if redis_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Redis unavailable")
 
+    token = str(uuid.uuid4())
+    await redis_client.setex(
+        f"stream_token:{token}",
+        _STREAM_TOKEN_TTL,
+        json.dumps({"slug": slug, "user_id": str(user.id)}),
+    )
     return {"token": token}
 
 
@@ -391,11 +402,9 @@ async def stream_video(
     if not video.is_public:
         if st:
             # Preferred path: short-lived Redis stream token
-            r = await _get_redis()
-            try:
-                raw = await r.get(f"stream_token:{st}")
-            finally:
-                await r.aclose()
+            if redis_client is None:
+                raise _denied
+            raw = await redis_client.get(f"stream_token:{st}")
             if not raw:
                 raise _denied
             token_data = json.loads(raw)
@@ -427,11 +436,10 @@ async def stream_video(
         finally:
             await resp.aclose()
 
-    client = http_client or httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=10.0, read=3600.0, write=None, pool=10.0)
-    )
-    req = client.build_request("GET", presigned_url, headers=forward_headers)
-    resp = await client.send(req, stream=True)
+    if http_client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service starting")
+    req = http_client.build_request("GET", presigned_url, headers=forward_headers)
+    resp = await http_client.send(req, stream=True)
 
     resp_headers: dict[str, str] = {"Accept-Ranges": "bytes"}
     for h in ("Content-Length", "Content-Range", "Content-Type"):

@@ -11,17 +11,20 @@ RESEND_API_URL = "https://api.resend.com/emails"
 
 def send_email(to: str, subject: str, html_body: str) -> None:
     """Send email via Resend HTTP API."""
-    if not settings.smtp_configured:
-        logger.warning("SMTP not configured — skipping email to %s", to)
+    if not settings.email_configured:
+        logger.warning("Email not configured — skipping send to %s", to)
         return
-
-    from_addr = settings.smtp_from or settings.smtp_user
 
     try:
         resp = httpx.post(
             RESEND_API_URL,
-            headers={"Authorization": f"Bearer {settings.smtp_password}"},
-            json={"from": from_addr, "to": [to], "subject": subject, "html": html_body},
+            headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+            json={
+                "from": settings.email_from,
+                "to": [to],
+                "subject": subject,
+                "html": html_body,
+            },
             timeout=10,
         )
         resp.raise_for_status()

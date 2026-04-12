@@ -1,4 +1,3 @@
-import ipaddress
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -16,23 +15,6 @@ from app.payments.service import check_payment, create_payment
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
-
-# YooKassa outbound IP ranges — https://yookassa.ru/developers/using-api/webhooks
-_YOOKASSA_NETWORKS: frozenset[ipaddress.IPv4Network] = frozenset({
-    ipaddress.ip_network("185.71.76.0/27"),
-    ipaddress.ip_network("185.71.77.0/27"),
-    ipaddress.ip_network("77.75.153.0/25"),
-    ipaddress.ip_network("77.75.156.11/32"),
-    ipaddress.ip_network("77.75.156.35/32"),
-})
-
-
-def _is_yookassa_ip(ip_str: str) -> bool:
-    try:
-        addr = ipaddress.ip_address(ip_str)
-        return any(addr in net for net in _YOOKASSA_NETWORKS)
-    except ValueError:
-        return False
 
 
 class CreatePaymentRequest(BaseModel):
@@ -63,12 +45,14 @@ async def create_payment_endpoint(
 
 @router.post("/webhook")
 async def payment_webhook(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
-    """Handle YooKassa webhook notifications."""
-    real_ip = request.headers.get("X-Real-IP") or (request.client.host if request.client else "")
-    if not _is_yookassa_ip(real_ip):
-        logger.warning("Webhook from unexpected IP: %s", real_ip)
-        return {"status": "ignored"}
+    """Handle YooKassa webhook notifications.
 
+    We do NOT trust the request body on its own — YooKassa doesn't sign webhooks
+    with HMAC. Instead we treat the body as a hint containing the payment_id
+    and verify the real payment status via the authorized YooKassa API. An
+    attacker can POST a fake body but cannot forge a succeeded payment because
+    check_payment() reads from YooKassa directly with our shop secret.
+    """
     body = await request.json()
 
     event_type = body.get("event")
@@ -78,11 +62,16 @@ async def payment_webhook(request: Request, db: AsyncSession = Depends(get_db)) 
     payment_object = body.get("object", {})
     payment_id = payment_object.get("id")
 
-    if not payment_id:
+    if not payment_id or not isinstance(payment_id, str):
         return {"status": "no payment id"}
 
-    payment_info = check_payment(payment_id)
+    try:
+        payment_info = check_payment(payment_id)
+    except Exception:
+        logger.exception("Failed to fetch payment %s from YooKassa", payment_id)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Upstream error")
 
+    # Authoritative status comes from YooKassa, not the webhook body
     if payment_info["status"] != "succeeded":
         return {"status": "not succeeded"}
 
@@ -98,8 +87,20 @@ async def payment_webhook(request: Request, db: AsyncSession = Depends(get_db)) 
     if user is None:
         return {"status": "user not found"}
 
+    # Idempotency — never process the same payment_id twice
+    if user.last_processed_payment_id == payment_id:
+        return {"status": "already processed"}
+
+    # Extend from current expiry if it is in the future, otherwise start fresh
+    now = datetime.now(timezone.utc)
+    current_expires = user.plan_expires_at
+    if current_expires is not None and current_expires.tzinfo is None:
+        current_expires = current_expires.replace(tzinfo=timezone.utc)
+    base = current_expires if current_expires and current_expires > now else now
+
     user.plan = plan
-    user.plan_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    user.plan_expires_at = base + timedelta(days=30)
+    user.last_processed_payment_id = payment_id
     await db.commit()
 
     return {"status": "ok"}

@@ -25,12 +25,9 @@ class Settings(BaseSettings):
     # Comma-separated emails with lifetime unlimited Pro access (e.g. "owner@example.com")
     lifetime_emails: str = ""
 
-    # SMTP for email verification
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    smtp_from: str = ""
+    # Email sending via Resend HTTP API (VPS blocks SMTP port 587)
+    resend_api_key: str = ""
+    email_from: str = ""
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
@@ -40,8 +37,8 @@ class Settings(BaseSettings):
         return email.lower() in {e.strip().lower() for e in self.lifetime_emails.split(",")}
 
     @property
-    def smtp_configured(self) -> bool:
-        return bool(self.smtp_host and self.smtp_user and self.smtp_password)
+    def email_configured(self) -> bool:
+        return bool(self.resend_api_key and self.email_from)
 
 
 settings = Settings()

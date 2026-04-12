@@ -24,6 +24,7 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     email_verification_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     email_verification_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_processed_payment_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     videos: Mapped[list["Video"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 

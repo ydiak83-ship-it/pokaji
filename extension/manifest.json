@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Pokaji — Запись экрана",
   "description": "Запиши экран, получи ссылку, поделись. Бесплатная альтернатива Loom.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "permissions": [
     "storage",
     "notifications",
@@ -12,9 +12,7 @@
   ],
   "host_permissions": [
     "https://gopokaji.ru/*",
-    "https://s3.twcstorage.ru/*",
-    "https://*.twcstorage.ru/*",
-    "http://localhost:8000/*"
+    "https://*.twcstorage.ru/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",

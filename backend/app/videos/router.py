@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -56,7 +56,15 @@ def _video_to_response(
     replies_count: int = 0,
     author_email: str | None = None,
 ) -> VideoResponse:
-    thumbnail_url = get_presigned_url(video.thumbnail_key) if video.thumbnail_key else None
+    # Return a stable proxy URL instead of the raw presigned S3 URL — the
+    # presigned URL contains X-Amz-Signature, and embedding it in public HTML
+    # (og:image, <video poster>) would leak the signed token via Referer
+    # headers or page-source inspection
+    thumbnail_url = (
+        f"{settings.api_url}/api/videos/{video.slug}/thumbnail"
+        if video.thumbnail_key
+        else None
+    )
     video_url = get_presigned_url(video.file_key) if video.status == "ready" else None
     return VideoResponse(
         id=video.id,
@@ -453,6 +461,21 @@ async def stream_video(
         headers=resp_headers,
         background=None,
     )
+
+
+@router.get("/{slug}/thumbnail")
+async def get_thumbnail(slug: str, db: AsyncSession = Depends(get_db)) -> RedirectResponse:
+    """Redirect to the presigned S3 thumbnail URL.
+
+    The redirect keeps the signed URL out of public HTML (og:image, poster
+    attributes) so it can't leak via Referer headers or page inspection.
+    """
+    result = await db.execute(select(Video).where(Video.slug == slug))
+    video = result.scalar_one_or_none()
+    if video is None or not video.thumbnail_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thumbnail not found")
+    presigned_url = get_presigned_url(video.thumbnail_key, expires_in=300)
+    return RedirectResponse(url=presigned_url, status_code=status.HTTP_302_FOUND)
 
 
 @router.get("/{slug}/replies", response_model=list[VideoResponse])

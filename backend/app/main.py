@@ -36,7 +36,10 @@ app = FastAPI(title="Pokaji API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.app_url, "http://localhost:3000", "chrome-extension://*"],
+    # Extensions bypass CORS for origins listed in their host_permissions,
+    # so chrome-extension:// entries here are unused — and a wildcard entry
+    # would be a blanket "trust any installed extension" grant
+    allow_origins=[settings.app_url, "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

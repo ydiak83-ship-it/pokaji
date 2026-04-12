@@ -15,6 +15,11 @@ out/
 .env
 .env.local
 
+# Extension signing & build artifacts — must never be committed
+*.pem
+*.crx
+pokaji-extension-*.zip
+
 # IDE
 .vscode/
 .idea/

@@ -40,7 +40,7 @@ http_client: httpx.AsyncClient | None = None
 redis_client: aioredis.Redis | None = None
 
 FREE_VIDEO_LIMIT = 25
-FREE_MAX_DURATION_SEC = 300  # 5 minutes
+FREE_MAX_DURATION_SEC = 600  # 10 minutes
 
 
 def _mask_email(email: str) -> str:

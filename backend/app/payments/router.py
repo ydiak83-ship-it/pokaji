@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.utils import get_current_user
+from app.config import settings
 from app.database import get_db
 from app.models import User
 from app.payments.service import check_payment, create_payment
@@ -31,6 +32,8 @@ async def create_payment_endpoint(
     data: CreatePaymentRequest,
     user: User = Depends(get_current_user),
 ) -> CreatePaymentResponse:
+    if settings.is_free_mvp:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     if data.plan not in ("pro", "team"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Plan must be 'pro' or 'team'")
 
@@ -53,6 +56,8 @@ async def payment_webhook(request: Request, db: AsyncSession = Depends(get_db)) 
     attacker can POST a fake body but cannot forge a succeeded payment because
     check_payment() reads from YooKassa directly with our shop secret.
     """
+    if settings.is_free_mvp:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     body = await request.json()
 
     event_type = body.get("event")

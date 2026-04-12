@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     # Comma-separated emails with lifetime unlimited Pro access (e.g. "owner@example.com")
     lifetime_emails: str = ""
 
+    # MVP mode: hides all paid UI and makes payment endpoints return 404.
+    # Default true so the app ships as a single free tier without needing an
+    # env var. Flip to false (via IS_FREE_MVP=false in .env) to re-enable
+    # the pricing page, upgrade CTAs and YooKassa integration on redeploy.
+    is_free_mvp: bool = True
+
     # Email sending via Resend HTTP API (VPS blocks SMTP port 587)
     resend_api_key: str = ""
     email_from: str = ""

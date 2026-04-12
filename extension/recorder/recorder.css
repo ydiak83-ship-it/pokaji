@@ -1,0 +1,348 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #09090b;
+  color: #fafafa;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.container {
+  width: 100%;
+  max-width: 500px;
+  padding: 32px 24px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ─── Compact recording widget ─── */
+body:has(.screen.compact:not(.hidden)) {
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+body:has(.screen.compact:not(.hidden)) .container {
+  padding: 0;
+  max-width: none;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.screen.compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Camera/screen preview — rounded square to match the overlay drawn
+      into the final video across all recording modes ── */
+.cam-circle-wrap {
+  width: 172px;
+  height: 172px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: #18181b;
+  border: 3px solid #6366f1;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 8px 32px rgba(0, 0, 0, 0.7);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.cam-circle-wrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  display: block;
+}
+
+/* Screen-only mode: icon placeholder inside circle */
+.screen-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d0d10;
+  color: #52525b;
+}
+
+.screen-placeholder svg {
+  width: 56px;
+  height: 56px;
+}
+
+/* ── Controls pill ── */
+.controls-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(15, 15, 18, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50px;
+  padding: 8px 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.pill-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+
+.pill-btn:active {
+  transform: scale(0.92);
+}
+
+/* Stop — red filled */
+.pill-stop {
+  background: #dc2626;
+  color: white;
+}
+
+.pill-stop:hover {
+  background: #b91c1c;
+}
+
+/* Pause — subtle */
+.pill-pause {
+  background: rgba(255, 255, 255, 0.1);
+  color: #d4d4d8;
+}
+
+.pill-pause:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fafafa;
+}
+
+/* Cancel/Trash — subtle destructive */
+.pill-cancel {
+  background: transparent;
+  color: #71717a;
+}
+
+.pill-cancel:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #ef4444;
+}
+
+/* Timer */
+.pill-timer {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fafafa;
+  letter-spacing: 0.5px;
+  padding: 0 6px;
+  min-width: 44px;
+  text-align: center;
+}
+
+/* ─── Mode selection screen ─── */
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #818cf8, #6366f1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.5px;
+}
+
+.tagline {
+  font-size: 14px;
+  color: #71717a;
+  margin-top: -8px;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 8px;
+  background: #18181b;
+  border: 1.5px solid #27272a;
+  border-radius: 16px;
+  color: #fafafa;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.15s;
+}
+
+.mode-btn:hover {
+  border-color: #6366f1;
+  background: #1e1b4b;
+  transform: translateY(-2px);
+}
+
+.mode-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #818cf8;
+}
+
+.mode-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.mode-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fafafa;
+}
+
+.mode-desc {
+  font-size: 11px;
+  color: #71717a;
+}
+
+.hint {
+  font-size: 12px;
+  color: #52525b;
+  margin-top: 4px;
+}
+
+/* ─── Uploading / Done / Error screens ─── */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #27272a;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.success-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 24px rgba(34, 197, 94, 0.3);
+}
+
+.success-text {
+  font-size: 17px;
+  font-weight: 600;
+  color: #22c55e;
+}
+
+.sub-text {
+  font-size: 12px;
+  color: #71717a;
+}
+
+.error-text {
+  color: #ef4444;
+  font-size: 13px;
+  text-align: center;
+  word-wrap: break-word;
+  max-width: 100%;
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-family: inherit;
+}
+
+.btn-secondary {
+  background: #27272a;
+  color: #fafafa;
+}
+
+.btn-secondary:hover {
+  background: #3f3f46;
+}
+
+/* ─── Adaptive screens ─── */
+body:has(#done-screen:not(.hidden)),
+body:has(#uploading-screen:not(.hidden)),
+body:has(#error-screen:not(.hidden)) {
+  padding: 0;
+  margin: 0;
+}
+
+body:has(#done-screen:not(.hidden)) .container,
+body:has(#uploading-screen:not(.hidden)) .container,
+body:has(#error-screen:not(.hidden)) .container {
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#done-screen,
+#uploading-screen,
+#error-screen {
+  padding: 16px;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* ─── Animations ─── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}

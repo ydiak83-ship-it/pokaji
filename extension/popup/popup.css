@@ -181,6 +181,70 @@ body {
   font-size: 12px;
 }
 
+.input-field {
+  width: 100%;
+  padding: 10px 12px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  color: #fafafa;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.btn-big {
+  padding: 16px 24px;
+  font-size: 16px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.live-dot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #7f1d1d;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+}
+
+.timer-big {
+  font-size: 36px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fafafa;
+  margin: 12px 0;
+}
+
+.hotkey-hint {
+  font-size: 12px;
+  color: #a1a1aa;
+  text-align: center;
+  margin: 8px 0 16px;
+}
+
+.hotkey-hint kbd {
+  background: #27272a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: -apple-system, monospace;
+  font-size: 11px;
+  color: #fafafa;
+}
+
 .link-box .btn {
   width: auto;
   padding: 8px 16px;

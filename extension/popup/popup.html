@@ -12,55 +12,28 @@
     </div>
 
     <!-- Auth screen -->
-    <div id="auth-screen" class="screen">
+    <div id="auth-screen" class="screen hidden">
       <p>Войдите, чтобы начать запись</p>
       <button id="btn-login" class="btn btn-primary">Войти</button>
     </div>
 
-    <!-- Record screen -->
-    <div id="record-screen" class="screen hidden">
-      <div class="record-options">
-        <button id="btn-screen" class="option-btn" data-mode="screen">
-          <span class="icon">🖥</span>
-          <span>Экран</span>
-        </button>
-        <button id="btn-screen-cam" class="option-btn" data-mode="screen-cam">
-          <span class="icon">🖥+📷</span>
-          <span>Экран + камера</span>
-        </button>
-        <button id="btn-cam" class="option-btn" data-mode="cam">
-          <span class="icon">📷</span>
-          <span>Камера</span>
-        </button>
+    <!-- Main screen -->
+    <div id="main-screen" class="screen hidden">
+      <button id="btn-start" class="btn btn-primary btn-big">Начать запись</button>
+      <div class="hotkey-hint">
+        Горячая клавиша: <kbd>Alt + Shift + P</kbd>
       </div>
+      <button id="btn-dashboard" class="btn btn-secondary">Мои видео</button>
     </div>
 
     <!-- Recording screen -->
     <div id="recording-screen" class="screen hidden">
-      <div class="timer" id="timer">00:00</div>
-      <div class="controls">
-        <button id="btn-pause" class="btn btn-secondary">Пауза</button>
-        <button id="btn-stop" class="btn btn-danger">Стоп</button>
+      <div class="live-dot-row">
+        <div class="dot"></div>
+        <span>Запись идёт</span>
       </div>
-    </div>
-
-    <!-- Uploading screen -->
-    <div id="uploading-screen" class="screen hidden">
-      <div class="spinner"></div>
-      <p>Загрузка...</p>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progress-fill"></div>
-      </div>
-    </div>
-
-    <!-- Done screen -->
-    <div id="done-screen" class="screen hidden">
-      <p class="success">Готово!</p>
-      <div class="link-box">
-        <input type="text" id="video-link" readonly>
-        <button id="btn-copy" class="btn btn-primary">Копировать</button>
-      </div>
-      <button id="btn-new" class="btn btn-secondary">Новая запись</button>
+      <div class="timer-big" id="popup-timer">00:00</div>
+      <button id="btn-open-recorder" class="btn btn-secondary">Окно записи</button>
     </div>
   </div>
 

@@ -1,16 +1,10 @@
-const API_URL = "http://localhost:8000";
-const APP_URL = "http://localhost:3000";
+const APP_URL = "https://gopokaji.ru";
 
 const screens = {
   auth: document.getElementById("auth-screen"),
-  record: document.getElementById("record-screen"),
+  main: document.getElementById("main-screen"),
   recording: document.getElementById("recording-screen"),
-  uploading: document.getElementById("uploading-screen"),
-  done: document.getElementById("done-screen"),
 };
-
-let timerInterval = null;
-let seconds = 0;
 
 function showScreen(name) {
   Object.values(screens).forEach((s) => s.classList.add("hidden"));
@@ -23,80 +17,52 @@ function formatTime(s) {
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-function startTimer() {
-  seconds = 0;
-  document.getElementById("timer").textContent = "00:00";
-  timerInterval = setInterval(() => {
-    seconds++;
-    document.getElementById("timer").textContent = formatTime(seconds);
-  }, 1000);
-}
+let tickInterval = null;
 
-function stopTimer() {
-  clearInterval(timerInterval);
-  timerInterval = null;
-}
-
-// Check auth on load
-chrome.storage.local.get(["token"], (result) => {
-  if (result.token) {
-    showScreen("record");
-  } else {
-    showScreen("auth");
+function startTickingTimer(startedAt) {
+  function tick() {
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    const el = document.getElementById("popup-timer");
+    if (el) el.textContent = formatTime(elapsed);
   }
+  tick();
+  tickInterval = setInterval(tick, 500);
+}
+
+// Check state
+chrome.storage.local.get(["token", "recordingStartedAt"], (result) => {
+  if (!result.token) {
+    showScreen("auth");
+    return;
+  }
+  if (result.recordingStartedAt) {
+    showScreen("recording");
+    startTickingTimer(result.recordingStartedAt);
+    return;
+  }
+  showScreen("main");
 });
 
-// Login button — open web app login page
 document.getElementById("btn-login").addEventListener("click", () => {
-  chrome.tabs.create({ url: `${APP_URL}/login?extension=true` });
+  chrome.tabs.create({ url: `${APP_URL}/login` });
 });
 
-// Record buttons
-document.querySelectorAll(".option-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const mode = btn.dataset.mode;
-    chrome.runtime.sendMessage({ action: "startRecording", mode }, (response) => {
-      if (response?.success) {
-        showScreen("recording");
-        startTimer();
-      }
-    });
+document.getElementById("btn-start").addEventListener("click", () => {
+  chrome.runtime.sendMessage({ action: "openRecorder" }, () => {
+    window.close();
   });
 });
 
-// Pause
-document.getElementById("btn-pause").addEventListener("click", () => {
-  chrome.runtime.sendMessage({ action: "togglePause" }, (response) => {
-    const btn = document.getElementById("btn-pause");
-    btn.textContent = response?.paused ? "Продолжить" : "Пауза";
+document.getElementById("btn-dashboard").addEventListener("click", () => {
+  chrome.tabs.create({ url: `${APP_URL}/dashboard` });
+});
+
+document.getElementById("btn-open-recorder").addEventListener("click", () => {
+  chrome.runtime.sendMessage({ action: "openRecorder" }, () => {
+    window.close();
   });
 });
 
-// Stop
-document.getElementById("btn-stop").addEventListener("click", () => {
-  stopTimer();
-  showScreen("uploading");
-  chrome.runtime.sendMessage({ action: "stopRecording" }, (response) => {
-    if (response?.slug) {
-      const link = `${APP_URL}/v/${response.slug}`;
-      document.getElementById("video-link").value = link;
-      showScreen("done");
-    }
-  });
-});
-
-// Copy link
-document.getElementById("btn-copy").addEventListener("click", () => {
-  const input = document.getElementById("video-link");
-  navigator.clipboard.writeText(input.value);
-  const btn = document.getElementById("btn-copy");
-  btn.textContent = "Скопировано!";
-  setTimeout(() => {
-    btn.textContent = "Копировать";
-  }, 2000);
-});
-
-// New recording
-document.getElementById("btn-new").addEventListener("click", () => {
-  showScreen("record");
+window.addEventListener("beforeunload", () => {
+  if (tickInterval) clearInterval(tickInterval);
 });

@@ -35,17 +35,48 @@ async function openRecorderWindow() {
 chrome.windows.onRemoved.addListener((windowId) => {
   if (windowId === recorderWindowId) {
     recorderWindowId = null;
-    clearTimeout(refocusTimeout);
     chrome.storage.local.remove(["recordingStartedAt"]);
+    chrome.notifications.clear("pokaji-recording").catch(() => {});
   }
 });
 
 
-// Hotkey: Alt+Shift+P
+async function isRecorderWindowAlive() {
+  try {
+    const windows = await chrome.windows.getAll({ populate: true });
+    for (const win of windows) {
+      for (const tab of win.tabs || []) {
+        if (tab.url?.includes("recorder/recorder.html")) return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+// Hotkey: Alt+Shift+P — start recorder, or stop an active recording when the
+// recorder popup is minimised and its PiP controls aren't reachable
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command === "toggle-recording") {
-    await openRecorderWindow();
+  if (command !== "toggle-recording") return;
+  const { recordingStartedAt } = await chrome.storage.local.get("recordingStartedAt");
+  if (recordingStartedAt && (await isRecorderWindowAlive())) {
+    chrome.runtime.sendMessage({ action: "stopRecording" }).catch(() => {});
+    chrome.notifications.clear("pokaji-recording").catch(() => {});
+    return;
   }
+  // Either no recording, or the flag is stale (recorder window crashed without
+  // cleanup). Clear the stale state and open a fresh recorder.
+  if (recordingStartedAt) {
+    await chrome.storage.local.remove(["recordingStartedAt"]);
+    chrome.notifications.clear("pokaji-recording").catch(() => {});
+  }
+  await openRecorderWindow();
+});
+
+// Clicking the "Запись идёт" notification also stops the recording
+chrome.notifications.onClicked.addListener((notifId) => {
+  if (notifId !== "pokaji-recording") return;
+  chrome.runtime.sendMessage({ action: "stopRecording" }).catch(() => {});
+  chrome.notifications.clear(notifId).catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -60,6 +91,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "saveToken") {
+    const allowedOrigins = ["https://gopokaji.ru", "https://www.gopokaji.ru"];
+    if (!allowedOrigins.includes(sender.origin)) {
+      sendResponse({ success: false, error: "unauthorized origin" });
+      return false;
+    }
     chrome.storage.local.set({ token: message.token });
     sendResponse({ success: true });
     return false;

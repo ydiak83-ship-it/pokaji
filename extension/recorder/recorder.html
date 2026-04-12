@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Pokaji — Запись</title>
+  <link rel="stylesheet" href="recorder.css">
+</head>
+<body>
+  <div class="container">
+
+    <!-- Mode selection -->
+    <div id="mode-screen" class="screen">
+      <h1>Pokaji</h1>
+      <p class="tagline">Выбери режим записи</p>
+      <div class="mode-grid">
+        <button class="mode-btn" data-mode="screen">
+          <div class="mode-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="14" rx="2"/>
+              <path d="M8 20h8M12 18v2"/>
+            </svg>
+          </div>
+          <div class="mode-title">Экран</div>
+          <div class="mode-desc">С микрофоном</div>
+        </button>
+        <button class="mode-btn" data-mode="screen-cam">
+          <div class="mode-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="14" height="10" rx="2"/>
+              <circle cx="19" cy="9" r="3"/>
+            </svg>
+          </div>
+          <div class="mode-title">Экран + камера</div>
+          <div class="mode-desc">Картинка в картинке</div>
+        </button>
+        <button class="mode-btn" data-mode="cam">
+          <div class="mode-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+            </svg>
+          </div>
+          <div class="mode-title">Камера</div>
+          <div class="mode-desc">Веб-камера</div>
+        </button>
+      </div>
+      <p class="hint">Chrome попросит разрешение на запись</p>
+    </div>
+
+    <!-- Recording widget -->
+    <div id="recording-screen" class="screen hidden compact">
+      <!-- Circle: camera feed or screen icon -->
+      <div class="cam-circle-wrap">
+        <video id="camera-video" autoplay muted playsinline></video>
+        <div id="screen-icon" class="screen-placeholder hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="13" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Controls pill -->
+      <div class="controls-pill">
+        <button id="btn-stop" class="pill-btn pill-stop" title="Остановить">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+            <rect x="4" y="4" width="16" height="16" rx="2"/>
+          </svg>
+        </button>
+        <div class="pill-timer" id="timer">0:00</div>
+        <button id="btn-pause" class="pill-btn pill-pause" title="Пауза">
+          <svg id="pause-icon" viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+            <rect x="6" y="5" width="4" height="14" rx="1"/>
+            <rect x="14" y="5" width="4" height="14" rx="1"/>
+          </svg>
+        </button>
+        <button id="btn-cancel" class="pill-btn pill-cancel" title="Отменить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="15" height="15">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Uploading -->
+    <div id="uploading-screen" class="screen hidden">
+      <div class="spinner"></div>
+      <p>Загрузка видео...</p>
+    </div>
+
+    <!-- Done -->
+    <div id="done-screen" class="screen hidden">
+      <div class="success-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="32" height="32">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+      <p class="success-text">Видео загружено!</p>
+      <p class="sub-text">Окно закроется через 2 секунды</p>
+    </div>
+
+    <!-- Error -->
+    <div id="error-screen" class="screen hidden">
+      <p class="error-text">Ошибка: <span id="error-msg"></span></p>
+      <button id="btn-close" class="btn btn-secondary">Закрыть</button>
+    </div>
+
+  </div>
+  <script src="recorder.js"></script>
+</body>
+</html>

@@ -16,9 +16,16 @@ let currentMode = null;
 let cameraPreviewStream = null;
 let canvasAnimationId = null;
 let replyToSlug = null;
-// True when the screen capture source is the whole monitor — the PiP
-// recorder window is then part of the capture, so we must hide the live
-// camera preview inside it to avoid the user's face appearing twice.
+let compositorWorker = null;
+let pipPosPollerId = null;
+// Remember which window owns the poller interval — after pagehide nulls
+// pipWin, `window.clearInterval` on a PiP-owned ID is a no-op
+let pipPosPollerWin = null;
+let audioCtx = null;
+// True when the screen capture source is the whole monitor — in that case
+// the PiP recorder window is part of the capture, and we switch to a
+// worker-based compositor that paints the camera overlay on top of the
+// PiP's location to hide it
 let isFullScreenCapture = false;
 
 // Load reply context set by background when recorder was opened from a video page
@@ -26,6 +33,14 @@ chrome.storage.local.get(["replyToSlug"], (result) => {
   replyToSlug = result.replyToSlug || null;
   if (replyToSlug) {
     chrome.storage.local.remove("replyToSlug");
+  }
+});
+
+// Background broadcasts this when the user hits the stop hotkey while the
+// main popup is minimised (worker-path mode has no visible PiP controls)
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.action === "stopRecording" && mediaRecorder && mediaRecorder.state === "recording") {
+    stopRecording(true);
   }
 });
 
@@ -155,13 +170,38 @@ document.querySelectorAll(".mode-btn").forEach((btn) => {
   btn.addEventListener("click", async () => {
     const mode = btn.dataset.mode;
     try {
+      // Hide the mode selector immediately so it can't appear in the first
+      // frames of the recording when the screen capture includes the popup
+      Object.values(screens).forEach((s) => s && s.classList.add("hidden"));
       await startCapture(mode);
+
+      const useWorkerPath =
+        isFullScreenCapture && mode === "screen-cam" && compositorWorker;
+
       const pipOpened = await openDocumentPiP(mode);
       if (!pipOpened) {
         // Fallback: compact popup window
         showScreen("recording");
         await resizeFallback(mode);
       }
+
+      if (useWorkerPath && pipOpened) {
+        startPipPosPolling();
+        try {
+          await chrome.notifications.create("pokaji-recording", {
+            type: "basic",
+            iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+            title: "Запись идёт",
+            message: "Остановить: Alt+Shift+P",
+            priority: 2,
+          });
+        } catch {}
+      }
+
+      // Only start the recorder after the UI is tucked away (PiP opened and
+      // main popup minimized) — otherwise the first 1-2 seconds of the video
+      // contain the popup window with the mode selector
+      mediaRecorder.start(1000);
       startTimer();
     } catch (err) {
       showError(err.message || "Не удалось начать запись");
@@ -205,13 +245,7 @@ async function openDocumentPiP(mode) {
   recordingScreenEl.classList.remove("hidden");
   pipWin.document.body.appendChild(recordingScreenEl);
 
-  // Show the live camera preview unless doing so would duplicate the user's
-  // face in the final recording. That happens only in "screen-cam" mode
-  // AND when the captured surface is the whole monitor (which includes this
-  // PiP window). For pure "cam" mode, and for window/tab captures, the
-  // preview is safe.
-  const hideCamInPip = mode === "screen-cam" && isFullScreenCapture;
-  if (!hideCamInPip && (mode === "cam" || mode === "screen-cam") && cameraPreviewStream) {
+  if ((mode === "cam" || mode === "screen-cam") && cameraPreviewStream) {
     cameraVideoEl.srcObject = cameraPreviewStream;
     cameraVideoEl.style.display = "block";
     screenIconEl.classList.add("hidden");
@@ -251,9 +285,7 @@ function closePiP() {
 // ─── Fallback: compact popup window ───
 
 async function resizeFallback(mode) {
-  // See openDocumentPiP for the rationale on hideCamInPip
-  const hideCamInPip = mode === "screen-cam" && isFullScreenCapture;
-  if (!hideCamInPip && (mode === "cam" || mode === "screen-cam") && cameraPreviewStream) {
+  if ((mode === "cam" || mode === "screen-cam") && cameraPreviewStream) {
     cameraVideoEl.srcObject = cameraPreviewStream;
     cameraVideoEl.style.display = "block";
     screenIconEl.classList.add("hidden");
@@ -283,6 +315,12 @@ function cleanup() {
     cancelAnimationFrame(canvasAnimationId);
     canvasAnimationId = null;
   }
+  stopPipPosPolling();
+  if (compositorWorker) {
+    try { compositorWorker.postMessage({ type: "stop" }); } catch {}
+    try { compositorWorker.terminate(); } catch {}
+    compositorWorker = null;
+  }
   if (mediaRecorder && mediaRecorder.state !== "inactive") {
     try { mediaRecorder.stop(); } catch {}
   }
@@ -290,8 +328,44 @@ function cleanup() {
     try { s.getTracks().forEach((t) => t.stop()); } catch {}
   });
   activeStreams = [];
+  if (audioCtx) {
+    try { audioCtx.close(); } catch {}
+    audioCtx = null;
+  }
   mediaRecorder = null;
   recordedChunks = [];
+  isFullScreenCapture = false;
+}
+
+function stopPipPosPolling() {
+  if (pipPosPollerId !== null && pipPosPollerWin) {
+    try { pipPosPollerWin.clearInterval(pipPosPollerId); } catch {}
+  }
+  pipPosPollerId = null;
+  pipPosPollerWin = null;
+}
+
+function startPipPosPolling() {
+  if (!pipWin || !compositorWorker) return;
+  const dpr = window.devicePixelRatio || 1;
+  const send = () => {
+    if (!pipWin || !compositorWorker) return;
+    compositorWorker.postMessage({
+      type: "pip-pos",
+      pos: {
+        x: pipWin.screenX * dpr,
+        y: pipWin.screenY * dpr,
+        w: pipWin.outerWidth * dpr,
+        h: pipWin.outerHeight * dpr,
+      },
+    });
+  };
+  send();
+  // pipWin.setInterval runs in the PiP document's timer loop, which isn't
+  // throttled (PiP is always visible), so polling stays smooth even while
+  // the main popup is minimised
+  pipPosPollerWin = pipWin;
+  pipPosPollerId = pipWin.setInterval(send, 33);
 }
 
 async function startCapture(mode) {
@@ -329,9 +403,9 @@ async function startCapture(mode) {
     });
     activeStreams.push(screenStream);
 
-    // Heuristic: whole-screen captures return a stream sized to the monitor.
-    // Windows/tabs return smaller dimensions. We need this to know whether
-    // the PiP recorder window will leak into the capture (whole screen → yes).
+    // Heuristic: whole-screen captures return a stream sized to the monitor
+    // (optionally multiplied by devicePixelRatio on retina). Window and tab
+    // captures return the window's own dimensions.
     try {
       const s = screenStream.getVideoTracks()[0].getSettings();
       const sw = window.screen.width;
@@ -352,10 +426,10 @@ async function startCapture(mode) {
 
     const audioTracks = [];
     if (micStream && screenStream.getAudioTracks().length > 0) {
-      const ctx = new AudioContext();
-      const dest = ctx.createMediaStreamDestination();
-      ctx.createMediaStreamSource(micStream).connect(dest);
-      ctx.createMediaStreamSource(screenStream).connect(dest);
+      audioCtx = new AudioContext();
+      const dest = audioCtx.createMediaStreamDestination();
+      audioCtx.createMediaStreamSource(micStream).connect(dest);
+      audioCtx.createMediaStreamSource(screenStream).connect(dest);
       audioTracks.push(...dest.stream.getAudioTracks());
     } else if (micStream) {
       audioTracks.push(...micStream.getAudioTracks());
@@ -371,7 +445,38 @@ async function startCapture(mode) {
         cameraPreviewStream = camStream;
       } catch {}
 
-      if (camStream) {
+      const canUseWorker =
+        typeof MediaStreamTrackProcessor !== "undefined" &&
+        typeof MediaStreamTrackGenerator !== "undefined";
+
+      if (camStream && isFullScreenCapture && canUseWorker) {
+        // Whole-screen capture: composite off the main thread so the camera
+        // overlay is painted directly over the PiP recorder window's bounding
+        // box, hiding the PiP in the final video while still letting the user
+        // see their own live preview inside it
+        const screenProc = new MediaStreamTrackProcessor({
+          track: screenStream.getVideoTracks()[0],
+        });
+        const camProc = new MediaStreamTrackProcessor({
+          track: camStream.getVideoTracks()[0],
+        });
+        const generator = new MediaStreamTrackGenerator({ kind: "video" });
+
+        compositorWorker = new Worker(
+          chrome.runtime.getURL("recorder/recorder-worker.js")
+        );
+        compositorWorker.postMessage(
+          {
+            type: "init",
+            screen: screenProc.readable,
+            cam: camProc.readable,
+            output: generator.writable,
+          },
+          [screenProc.readable, camProc.readable, generator.writable]
+        );
+
+        finalStream = new MediaStream([generator, ...audioTracks]);
+      } else if (camStream) {
         const screenVideo = document.createElement("video");
         screenVideo.srcObject = screenStream;
         screenVideo.muted = true;
@@ -393,32 +498,48 @@ async function startCapture(mode) {
         canvas.width = screenVideo.videoWidth || 1920;
         canvas.height = screenVideo.videoHeight || 1080;
         const ctx2d = canvas.getContext("2d");
-        const camSize = Math.floor(canvas.width * 0.18);
-        const camX = canvas.width - camSize - 40;
-        const camY = canvas.height - camSize - 40;
+        // Rounded rect in the bottom-right corner — matches the worker-based
+        // overlay used in fullscreen mode (same shape, same corner, same
+        // indigo border), so the camera looks identical across all capture
+        // modes
+        const rectW = Math.floor(canvas.width * 0.22);
+        const rectH = Math.floor(rectW * 1.15);
+        const rectL = canvas.width - rectW - 40;
+        const rectT = canvas.height - rectH - 40;
+        const radius = Math.min(28, Math.min(rectW, rectH) / 4);
+
+        const drawOverlayPath = () => {
+          ctx2d.beginPath();
+          if (ctx2d.roundRect) {
+            ctx2d.roundRect(rectL, rectT, rectW, rectH, radius);
+          } else {
+            ctx2d.rect(rectL, rectT, rectW, rectH);
+          }
+        };
 
         function drawFrame() {
           ctx2d.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
-          // Crop a center square from the source video so the face isn't
-          // squashed when the camera is 16:9 or 4:3
           const vw = camVideo.videoWidth;
           const vh = camVideo.videoHeight;
           if (vw > 0 && vh > 0) {
-            const side = Math.min(vw, vh);
-            const sx = (vw - side) / 2;
-            const sy = (vh - side) / 2;
+            // cover-fit the cam stream into the rect
+            const scale = Math.max(rectW / vw, rectH / vh);
+            const drawW = vw * scale;
+            const drawH = vh * scale;
+            const drawX = rectL + (rectW - drawW) / 2;
+            const drawY = rectT + (rectH - drawH) / 2;
             ctx2d.save();
-            ctx2d.beginPath();
-            ctx2d.arc(camX + camSize / 2, camY + camSize / 2, camSize / 2, 0, Math.PI * 2);
+            drawOverlayPath();
             ctx2d.clip();
-            ctx2d.translate(2 * (camX + camSize / 2), 0);
+            const midX = rectL + rectW / 2;
+            ctx2d.translate(midX, 0);
             ctx2d.scale(-1, 1);
-            ctx2d.drawImage(camVideo, sx, sy, side, side, camX, camY, camSize, camSize);
+            ctx2d.translate(-midX, 0);
+            ctx2d.drawImage(camVideo, drawX, drawY, drawW, drawH);
             ctx2d.restore();
             ctx2d.strokeStyle = "#6366f1";
             ctx2d.lineWidth = 4;
-            ctx2d.beginPath();
-            ctx2d.arc(camX + camSize / 2, camY + camSize / 2, camSize / 2, 0, Math.PI * 2);
+            drawOverlayPath();
             ctx2d.stroke();
           }
           canvasAnimationId = requestAnimationFrame(drawFrame);
@@ -434,25 +555,37 @@ async function startCapture(mode) {
       finalStream = new MediaStream([screenStream.getVideoTracks()[0], ...audioTracks]);
     }
 
-    screenStream.getVideoTracks()[0].addEventListener("ended", () => stopRecording(true));
+    screenStream
+      .getVideoTracks()[0]
+      .addEventListener("ended", () => stopRecording(true), { once: true });
   }
 
   recordedChunks = [];
+  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+    ? "video/webm;codecs=vp9,opus"
+    : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+    ? "video/webm;codecs=vp8,opus"
+    : "video/webm";
   mediaRecorder = new MediaRecorder(finalStream, {
-    mimeType: "video/webm;codecs=vp9,opus",
+    mimeType,
     videoBitsPerSecond: 2500000,
   });
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size > 0) recordedChunks.push(e.data);
   };
-  mediaRecorder.start(1000);
+  // Recorder is started by the caller after the UI is hidden
 }
 
 // ─── Stop & upload ───
 
 async function stopRecording(upload = true) {
   stopTimer();
+  stopPipPosPolling();
   closePiP();
+
+  try {
+    await chrome.notifications.clear("pokaji-recording");
+  } catch {}
 
   try {
     const current = await chrome.windows.getCurrent();
@@ -460,6 +593,7 @@ async function stopRecording(upload = true) {
       width: 420,
       height: 300,
       state: "normal",
+      focused: true,
     });
   } catch {}
 

@@ -1,3 +1,38 @@
+// ── Extension presence signal & recorder bridge ──
+// Set DOM attribute — shared with page (unlike window which is isolated in content scripts)
+document.documentElement.setAttribute("data-pokaji-ext", "1");
+document.dispatchEvent(new CustomEvent("pokaji-extension-ready"));
+
+// Bridge: page JS → background (open recorder)
+const POKAJI_ORIGINS = ["https://gopokaji.ru", "https://www.gopokaji.ru"];
+window.addEventListener("message", (event) => {
+  if (event.source !== window || !event.data) return;
+  if (!POKAJI_ORIGINS.includes(event.origin)) return;
+  if (event.data.type === "pokaji-open-recorder") {
+    const replyToSlug = event.data.replyToSlug || null;
+    chrome.runtime.sendMessage({ action: "openRecorder", replyToSlug });
+  }
+});
+
+// Sync token from Pokaji website to extension storage
+if (location.hostname === "gopokaji.ru" || location.hostname === "www.gopokaji.ru") {
+  const syncToken = () => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      chrome.runtime.sendMessage({ action: "saveToken", token });
+    }
+  };
+
+  // Sync on load
+  syncToken();
+
+  // Watch for token changes (e.g. after login)
+  window.addEventListener("storage", syncToken);
+
+  // Also check periodically in case login happened in same tab
+  setInterval(syncToken, 2000);
+}
+
 // Camera overlay for screen+cam mode
 let cameraOverlay = null;
 let cameraStream = null;

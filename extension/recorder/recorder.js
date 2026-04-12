@@ -16,6 +16,10 @@ let currentMode = null;
 let cameraPreviewStream = null;
 let canvasAnimationId = null;
 let replyToSlug = null;
+// True when the screen capture source is the whole monitor — the PiP
+// recorder window is then part of the capture, so we must hide the live
+// camera preview inside it to avoid the user's face appearing twice.
+let isFullScreenCapture = false;
 
 // Load reply context set by background when recorder was opened from a video page
 chrome.storage.local.get(["replyToSlug"], (result) => {
@@ -201,12 +205,13 @@ async function openDocumentPiP(mode) {
   recordingScreenEl.classList.remove("hidden");
   pipWin.document.body.appendChild(recordingScreenEl);
 
-  // Setup camera or screen icon
-  // IMPORTANT: in "screen-cam" mode the PiP window gets captured as part of
-  // the screen recording. If we showed the live camera feed inside it, the
-  // user would see their face twice: once in our canvas composite and once
-  // leaked through the PiP window. So only "cam" mode shows the camera here.
-  if (mode === "cam" && cameraPreviewStream) {
+  // Show the live camera preview unless doing so would duplicate the user's
+  // face in the final recording. That happens only in "screen-cam" mode
+  // AND when the captured surface is the whole monitor (which includes this
+  // PiP window). For pure "cam" mode, and for window/tab captures, the
+  // preview is safe.
+  const hideCamInPip = mode === "screen-cam" && isFullScreenCapture;
+  if (!hideCamInPip && (mode === "cam" || mode === "screen-cam") && cameraPreviewStream) {
     cameraVideoEl.srcObject = cameraPreviewStream;
     cameraVideoEl.style.display = "block";
     screenIconEl.classList.add("hidden");
@@ -246,10 +251,9 @@ function closePiP() {
 // ─── Fallback: compact popup window ───
 
 async function resizeFallback(mode) {
-  // See openDocumentPiP — only pure "cam" mode shows the live camera preview
-  // inside the recorder window; screen-cam would leak the face into the
-  // captured screen twice.
-  if (mode === "cam" && cameraPreviewStream) {
+  // See openDocumentPiP for the rationale on hideCamInPip
+  const hideCamInPip = mode === "screen-cam" && isFullScreenCapture;
+  if (!hideCamInPip && (mode === "cam" || mode === "screen-cam") && cameraPreviewStream) {
     cameraVideoEl.srcObject = cameraPreviewStream;
     cameraVideoEl.style.display = "block";
     screenIconEl.classList.add("hidden");
@@ -325,6 +329,21 @@ async function startCapture(mode) {
     });
     activeStreams.push(screenStream);
 
+    // Heuristic: whole-screen captures return a stream sized to the monitor.
+    // Windows/tabs return smaller dimensions. We need this to know whether
+    // the PiP recorder window will leak into the capture (whole screen → yes).
+    try {
+      const s = screenStream.getVideoTracks()[0].getSettings();
+      const sw = window.screen.width;
+      const sh = window.screen.height;
+      const dpr = window.devicePixelRatio || 1;
+      isFullScreenCapture =
+        (s.width >= sw * 0.95 && s.height >= sh * 0.95) ||
+        (s.width >= sw * dpr * 0.95 && s.height >= sh * dpr * 0.95);
+    } catch {
+      isFullScreenCapture = false;
+    }
+
     let micStream = null;
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -380,19 +399,28 @@ async function startCapture(mode) {
 
         function drawFrame() {
           ctx2d.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
-          ctx2d.save();
-          ctx2d.beginPath();
-          ctx2d.arc(camX + camSize / 2, camY + camSize / 2, camSize / 2, 0, Math.PI * 2);
-          ctx2d.clip();
-          ctx2d.translate(2 * (camX + camSize / 2), 0);
-          ctx2d.scale(-1, 1);
-          ctx2d.drawImage(camVideo, camX, camY, camSize, camSize);
-          ctx2d.restore();
-          ctx2d.strokeStyle = "#6366f1";
-          ctx2d.lineWidth = 4;
-          ctx2d.beginPath();
-          ctx2d.arc(camX + camSize / 2, camY + camSize / 2, camSize / 2, 0, Math.PI * 2);
-          ctx2d.stroke();
+          // Crop a center square from the source video so the face isn't
+          // squashed when the camera is 16:9 or 4:3
+          const vw = camVideo.videoWidth;
+          const vh = camVideo.videoHeight;
+          if (vw > 0 && vh > 0) {
+            const side = Math.min(vw, vh);
+            const sx = (vw - side) / 2;
+            const sy = (vh - side) / 2;
+            ctx2d.save();
+            ctx2d.beginPath();
+            ctx2d.arc(camX + camSize / 2, camY + camSize / 2, camSize / 2, 0, Math.PI * 2);
+            ctx2d.clip();
+            ctx2d.translate(2 * (camX + camSize / 2), 0);
+            ctx2d.scale(-1, 1);
+            ctx2d.drawImage(camVideo, sx, sy, side, side, camX, camY, camSize, camSize);
+            ctx2d.restore();
+            ctx2d.strokeStyle = "#6366f1";
+            ctx2d.lineWidth = 4;
+            ctx2d.beginPath();
+            ctx2d.arc(camX + camSize / 2, camY + camSize / 2, camSize / 2, 0, Math.PI * 2);
+            ctx2d.stroke();
+          }
           canvasAnimationId = requestAnimationFrame(drawFrame);
         }
         drawFrame();

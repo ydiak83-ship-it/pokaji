@@ -24,10 +24,11 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
-    environment:
-      - NEXT_PUBLIC_API_URL=https://gopokaji.ru
-      - NEXT_PUBLIC_IS_FREE_MVP=false
+    build:
+      context: ./frontend
+      args:
+        - NEXT_PUBLIC_API_URL=https://gopokaji.ru
+        - NEXT_PUBLIC_IS_FREE_MVP=false
     depends_on:
       - backend
     restart: unless-stopped

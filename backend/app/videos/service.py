@@ -1,3 +1,4 @@
+import logging
 import secrets
 import string
 import subprocess
@@ -8,6 +9,8 @@ import boto3
 from botocore.config import Config as BotoConfig
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def generate_slug(length: int = 8) -> str:
@@ -71,22 +74,27 @@ def delete_from_s3(s3_key: str) -> None:
 
 
 def transcode_video(input_path: Path, output_path: Path) -> float:
-    """Transcode WebM to MP4 H.264 720p. Returns duration in seconds."""
+    """Transcode WebM to MP4 H.264, cap at 1080p, preserve source below that."""
     cmd = [
         "ffmpeg", "-y",
         "-i", str(input_path),
         "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "28",
+        "-preset", "medium",
+        "-crf", "22",
         "-profile:v", "high",
-        "-level:v", "4.1",
-        "-vf", "scale=-2:720",
+        "-level:v", "4.2",
+        "-vf", "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "-c:a", "aac",
         "-b:a", "128k",
         "-movflags", "+faststart",
         str(output_path),
     ]
-    subprocess.run(cmd, check=True, capture_output=True)  # noqa: S603
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)  # noqa: S603
+    except subprocess.CalledProcessError as err:
+        stderr = err.stderr.decode("utf-8", errors="replace") if err.stderr else ""
+        logger.error("ffmpeg transcode failed for %s:\n%s", input_path, stderr)
+        raise
 
     duration_cmd = [
         "ffprobe",

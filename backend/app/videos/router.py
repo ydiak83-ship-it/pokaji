@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -135,9 +136,10 @@ async def upload_video(
         tmp_path = Path(tmp.name)
 
     try:
-        # Process: transcode + thumbnail + S3 upload
-        file_key, thumb_key, duration = process_uploaded_video(
-            tmp_path, str(user.id), str(video_id)
+        # Process: transcode + thumbnail + S3 upload. Runs in a thread so
+        # the FastAPI event loop stays responsive during multi-minute ffmpeg.
+        file_key, thumb_key, duration = await asyncio.to_thread(
+            process_uploaded_video, tmp_path, str(user.id), str(video_id)
         )
     finally:
         tmp_path.unlink(missing_ok=True)

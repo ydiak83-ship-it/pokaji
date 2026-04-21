@@ -1,3 +1,23 @@
+/* ─────────────────────────────────────────────────────────
+   Pokaji recorder — warm × industrial, matches gopokaji.ru
+   ───────────────────────────────────────────────────────── */
+
+:root {
+  --bg: #15120e;
+  --surface: #1e1a16;
+  --surface-hover: #252019;
+  --border: rgba(255, 240, 220, 0.10);
+  --border-strong: rgba(255, 240, 220, 0.18);
+  --fg: #f5f1e9;
+  --fg-muted: #a39b8d;
+  --fg-dim: #6e6659;
+  --primary: #d9744a;
+  --primary-hover: #c4613a;
+  --primary-soft: rgba(217, 116, 74, 0.14);
+  --destructive: #d64545;
+  --destructive-hover: #b83838;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -5,9 +25,11 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #09090b;
-  color: #fafafa;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg);
+  color: var(--fg);
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -25,7 +47,7 @@ body {
   display: none !important;
 }
 
-/* ─── Compact recording widget ─── */
+/* ── Compact recording widget (transparent over-screen overlay) ── */
 body:has(.screen.compact:not(.hidden)) {
   background: transparent;
   padding: 0;
@@ -46,21 +68,20 @@ body:has(.screen.compact:not(.hidden)) .container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-/* ── Camera/screen preview — rounded square to match the overlay drawn
-      into the final video across all recording modes ── */
+/* ── Camera / screen live preview — rounded rect matches final-video overlay ── */
 .cam-circle-wrap {
-  width: 172px;
-  height: 172px;
-  border-radius: 24px;
+  width: 120px;
+  height: 120px;
+  border-radius: 12px;
   overflow: hidden;
-  background: #18181b;
-  border: 3px solid #6366f1;
+  background: var(--surface);
+  border: 2px solid var(--primary);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 8px 32px rgba(0, 0, 0, 0.7);
+    0 10px 32px rgba(0, 0, 0, 0.7);
   position: relative;
   flex-shrink: 0;
 }
@@ -73,15 +94,14 @@ body:has(.screen.compact:not(.hidden)) .container {
   display: block;
 }
 
-/* Screen-only mode: icon placeholder inside circle */
 .screen-placeholder {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0d0d10;
-  color: #52525b;
+  background: var(--bg);
+  color: var(--fg-dim);
 }
 
 .screen-placeholder svg {
@@ -89,17 +109,17 @@ body:has(.screen.compact:not(.hidden)) .container {
   height: 56px;
 }
 
-/* ── Controls pill ── */
+/* ── Controls pill (transparent glass bar over screen) ── */
 .controls-pill {
   display: flex;
   align-items: center;
-  gap: 4px;
-  background: rgba(15, 15, 18, 0.92);
+  gap: 3px;
+  background: rgba(21, 18, 14, 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-strong);
   border-radius: 50px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
 }
 
@@ -107,12 +127,12 @@ body:has(.screen.compact:not(.hidden)) .container {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  transition: background 0.15s, transform 0.1s, color 0.15s;
   flex-shrink: 0;
 }
 
@@ -120,51 +140,51 @@ body:has(.screen.compact:not(.hidden)) .container {
   transform: scale(0.92);
 }
 
-/* Stop — red filled */
+/* Stop — terracotta filled */
 .pill-stop {
-  background: #dc2626;
-  color: white;
+  background: var(--primary);
+  color: #fff;
 }
 
 .pill-stop:hover {
-  background: #b91c1c;
+  background: var(--primary-hover);
 }
 
 /* Pause — subtle */
 .pill-pause {
-  background: rgba(255, 255, 255, 0.1);
-  color: #d4d4d8;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
 }
 
 .pill-pause:hover {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fafafa;
+  background: rgba(255, 255, 255, 0.14);
 }
 
-/* Cancel/Trash — subtle destructive */
+/* Cancel — subtle destructive */
 .pill-cancel {
   background: transparent;
-  color: #71717a;
+  color: var(--fg-muted);
 }
 
 .pill-cancel:hover {
-  background: rgba(220, 38, 38, 0.12);
-  color: #ef4444;
+  background: rgba(214, 69, 69, 0.14);
+  color: var(--destructive);
 }
 
 /* Timer */
 .pill-timer {
-  font-size: 17px;
-  font-weight: 700;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: #fafafa;
-  letter-spacing: 0.5px;
-  padding: 0 6px;
-  min-width: 44px;
+  color: var(--fg);
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+  min-width: 40px;
   text-align: center;
 }
 
-/* ─── Mode selection screen ─── */
+/* ── Mode selection screen ── */
 .screen {
   display: flex;
   flex-direction: column;
@@ -174,18 +194,20 @@ body:has(.screen.compact:not(.hidden)) .container {
 }
 
 h1 {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 800;
-  background: linear-gradient(135deg, #818cf8, #6366f1);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: -0.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
 }
 
 .tagline {
-  font-size: 14px;
-  color: #71717a;
-  margin-top: -8px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-top: -4px;
 }
 
 .mode-grid {
@@ -193,27 +215,28 @@ h1 {
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 .mode-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 20px 8px;
-  background: #18181b;
-  border: 1.5px solid #27272a;
-  border-radius: 16px;
-  color: #fafafa;
+  gap: 10px;
+  padding: 22px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--fg);
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s, transform 0.15s;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  font-family: inherit;
 }
 
 .mode-btn:hover {
-  border-color: #6366f1;
-  background: #1e1b4b;
-  transform: translateY(-2px);
+  border-color: var(--primary);
+  background: var(--surface-hover);
+  transform: translateY(-1px);
 }
 
 .mode-icon {
@@ -222,7 +245,7 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #818cf8;
+  color: var(--primary);
 }
 
 .mode-icon svg {
@@ -233,26 +256,32 @@ h1 {
 .mode-title {
   font-size: 13px;
   font-weight: 600;
-  color: #fafafa;
+  color: var(--fg);
 }
 
 .mode-desc {
-  font-size: 11px;
-  color: #71717a;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
 }
 
 .hint {
-  font-size: 12px;
-  color: #52525b;
-  margin-top: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-top: 8px;
 }
 
-/* ─── Uploading / Done / Error screens ─── */
+/* ── Uploading / Done / Error screens ── */
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid #27272a;
-  border-top-color: #6366f1;
+  border: 3px solid var(--surface);
+  border-top-color: var(--primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -264,54 +293,60 @@ h1 {
 .success-icon {
   width: 56px;
   height: 56px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #22c55e, #16a34a);
+  border-radius: 12px;
+  background: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 24px rgba(34, 197, 94, 0.3);
+  box-shadow: 0 0 24px rgba(217, 116, 74, 0.3);
 }
 
 .success-text {
   font-size: 17px;
   font-weight: 600;
-  color: #22c55e;
+  color: var(--fg);
 }
 
 .sub-text {
-  font-size: 12px;
-  color: #71717a;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
 }
 
 .error-text {
-  color: #ef4444;
+  color: var(--destructive);
   font-size: 13px;
   text-align: center;
   word-wrap: break-word;
   max-width: 100%;
+  line-height: 1.5;
 }
 
 .btn {
   padding: 10px 20px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.15s, border-color 0.15s;
   font-family: inherit;
 }
 
 .btn-secondary {
-  background: #27272a;
-  color: #fafafa;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
 }
 
 .btn-secondary:hover {
-  background: #3f3f46;
+  background: var(--surface-hover);
+  border-color: var(--fg-muted);
 }
 
-/* ─── Adaptive screens ─── */
+/* ── Adaptive screens (fill viewport for status-only screens) ── */
 body:has(#done-screen:not(.hidden)),
 body:has(#uploading-screen:not(.hidden)),
 body:has(#error-screen:not(.hidden)) {
@@ -338,11 +373,5 @@ body:has(#error-screen:not(.hidden)) .container {
   width: 100%;
   height: 100%;
   justify-content: center;
-  gap: 10px;
-}
-
-/* ─── Animations ─── */
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.85); }
+  gap: 12px;
 }

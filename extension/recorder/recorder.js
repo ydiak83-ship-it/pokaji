@@ -16,6 +16,7 @@ let currentMode = null;
 let cameraPreviewStream = null;
 let canvasAnimationId = null;
 let replyToSlug = null;
+let selectedTeamSlug = null;
 let compositorWorker = null;
 let pipPosPollerId = null;
 // Remember which window owns the poller interval — after pagehide nulls
@@ -28,9 +29,10 @@ let audioCtx = null;
 // PiP's location to hide it
 let isFullScreenCapture = false;
 
-// Load reply context set by background when recorder was opened from a video page
-chrome.storage.local.get(["replyToSlug"], (result) => {
+// Load reply context and team selection
+chrome.storage.local.get(["replyToSlug", "selectedTeamSlug"], (result) => {
   replyToSlug = result.replyToSlug || null;
+  selectedTeamSlug = result.selectedTeamSlug || null;
   if (replyToSlug) {
     chrome.storage.local.remove("replyToSlug");
   }
@@ -219,14 +221,23 @@ async function openDocumentPiP(mode) {
 
   try {
     pipWin = await window.documentPictureInPicture.requestWindow({
-      width: 210,
-      height: 268,
+      width: 160,
+      height: 180,
       disallowReturnToOpener: false,
     });
   } catch (e) {
     console.warn("Document PiP failed:", e);
     return false;
   }
+
+  // Move PiP to bottom-right so its position matches the fallback window path
+  // AND the compositor's overlay (fullscreen mode hides the PiP behind the
+  // overlay, so both must land in the same corner).
+  try {
+    const sw = pipWin.screen?.availWidth ?? window.screen.availWidth;
+    const sh = pipWin.screen?.availHeight ?? window.screen.availHeight;
+    pipWin.moveTo(sw - 160 - 32, sh - 180 - 32);
+  } catch {}
 
   // Copy CSS into PiP window
   [...document.styleSheets].forEach((sheet) => {
@@ -296,11 +307,14 @@ async function resizeFallback(mode) {
   }
   try {
     const current = await chrome.windows.getCurrent();
+    // Bottom-right — matches the Document-PiP path and the compositor overlay.
+    const sw = screen.availWidth;
+    const sh = screen.availHeight;
     await chrome.windows.update(current.id, {
-      width: 210,
-      height: 268,
-      top: 40,
-      left: 40,
+      width: 160,
+      height: 210, // includes OS title bar (~30px) so body area matches 180
+      top: sh - 210 - 32,
+      left: sw - 160 - 32,
       focused: true,
     });
   } catch (err) {
@@ -378,7 +392,10 @@ async function startCapture(mode) {
     if (!devices.some((d) => d.kind === "videoinput")) {
       throw new Error("Камера не найдена");
     }
-    finalStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    finalStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+      audio: true,
+    });
     activeStreams.push(finalStream);
     cameraPreviewStream = finalStream;
   } else {
@@ -442,10 +459,15 @@ async function startCapture(mode) {
     if (mode === "screen-cam") {
       let camStream = null;
       try {
-        camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        camStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+          audio: false,
+        });
         activeStreams.push(camStream);
         cameraPreviewStream = camStream;
-      } catch {}
+      } catch (err) {
+        console.warn("[recorder] camera overlay unavailable, continuing screen-only:", err);
+      }
 
       const canUseWorker =
         typeof MediaStreamTrackProcessor !== "undefined" &&
@@ -467,12 +489,20 @@ async function startCapture(mode) {
         compositorWorker = new Worker(
           chrome.runtime.getURL("recorder/recorder-worker.js")
         );
+        // Tell the worker what size the overlay should be when pipPos isn't
+        // reported yet (fallback Chrome popup path): 160×210 logical, which is
+        // `resizeFallback`'s window dims including OS title bar.
+        const dpr = window.devicePixelRatio || 1;
         compositorWorker.postMessage(
           {
             type: "init",
             screen: screenProc.readable,
             cam: camProc.readable,
             output: generator.writable,
+            fallbackSize: {
+              w: Math.round(160 * dpr),
+              h: Math.round(210 * dpr),
+            },
           },
           [screenProc.readable, camProc.readable, generator.writable]
         );
@@ -500,17 +530,18 @@ async function startCapture(mode) {
         canvas.width = screenVideo.videoWidth || 1920;
         canvas.height = screenVideo.videoHeight || 1080;
         const ctx2d = canvas.getContext("2d");
-        // Rounded rect in the bottom-right corner — matches the worker-based
-        // overlay used in fullscreen mode (same shape, same corner, same
-        // indigo border), so the camera looks identical across all capture
-        // modes
-        const rectW = Math.floor(canvas.width * 0.22);
-        const rectH = Math.floor(rectW * 1.15);
-        const rectL = canvas.width - rectW - 40;
-        const rectT = canvas.height - rectH - 40;
-        const radius = Math.min(28, Math.min(rectW, rectH) / 4);
+        // Overlay size = PiP window body (160×180 logical) in physical pixels,
+        // so the camera looks the exact same size as the user sees the PiP on
+        // their screen, regardless of the captured window's resolution.
+        const dprWin = window.devicePixelRatio || 1;
+        const rectW = Math.round(160 * dprWin);
+        const rectH = Math.round(180 * dprWin);
+        const margin = Math.round(32 * dprWin);
+        const rectL = canvas.width - margin - rectW;
+        const rectT = canvas.height - margin - rectH;
+        const radius = Math.min(16, Math.min(rectW, rectH) / 6);
 
-        const drawOverlayPath = () => {
+        const drawPath = () => {
           ctx2d.beginPath();
           if (ctx2d.roundRect) {
             ctx2d.roundRect(rectL, rectT, rectW, rectH, radius);
@@ -524,14 +555,14 @@ async function startCapture(mode) {
           const vw = camVideo.videoWidth;
           const vh = camVideo.videoHeight;
           if (vw > 0 && vh > 0) {
-            // cover-fit the cam stream into the rect
+            // Cover-fit the cam into the rect and mirror horizontally.
             const scale = Math.max(rectW / vw, rectH / vh);
             const drawW = vw * scale;
             const drawH = vh * scale;
             const drawX = rectL + (rectW - drawW) / 2;
             const drawY = rectT + (rectH - drawH) / 2;
             ctx2d.save();
-            drawOverlayPath();
+            drawPath();
             ctx2d.clip();
             const midX = rectL + rectW / 2;
             ctx2d.translate(midX, 0);
@@ -539,9 +570,9 @@ async function startCapture(mode) {
             ctx2d.translate(-midX, 0);
             ctx2d.drawImage(camVideo, drawX, drawY, drawW, drawH);
             ctx2d.restore();
-            ctx2d.strokeStyle = "#6366f1";
-            ctx2d.lineWidth = 4;
-            drawOverlayPath();
+            ctx2d.strokeStyle = "#d9744a";
+            ctx2d.lineWidth = 3;
+            drawPath();
             ctx2d.stroke();
           }
           canvasAnimationId = requestAnimationFrame(drawFrame);
@@ -570,7 +601,7 @@ async function startCapture(mode) {
     : "video/webm";
   mediaRecorder = new MediaRecorder(finalStream, {
     mimeType,
-    videoBitsPerSecond: 2500000,
+    videoBitsPerSecond: 5000000,
   });
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size > 0) recordedChunks.push(e.data);
@@ -636,8 +667,14 @@ async function uploadVideo(blob) {
   const { token } = await chrome.storage.local.get(["token"]);
   if (!token) throw new Error("Не авторизован");
 
-  // Step 1 — ask backend for a presigned S3 PUT URL
-  const initResp = await fetch(`${API_URL}/api/videos/init-upload`, {
+  // Step 1 — ask backend for a presigned S3 PUT URL. Pass team_slug so the
+  // backend gate-check matches where finalize will file the video (a team
+  // member uploading to an active team library shouldn't be blocked at init
+  // by their personal monthly quota).
+  const teamQuery = selectedTeamSlug
+    ? `?team_slug=${encodeURIComponent(selectedTeamSlug)}`
+    : "";
+  const initResp = await fetch(`${API_URL}/api/videos/init-upload${teamQuery}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -668,6 +705,7 @@ async function uploadVideo(blob) {
       video_id,
       upload_key,
       reply_to_slug: replyToSlug || null,
+      team_slug: selectedTeamSlug || null,
     }),
   });
   if (!finalizeResp.ok) {

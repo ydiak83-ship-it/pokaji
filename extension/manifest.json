@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Pokaji — Запись экрана",
   "description": "Запиши экран, получи ссылку, поделись. Бесплатная альтернатива Loom.",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "permissions": [
     "storage",
     "notifications",
@@ -37,9 +37,8 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["https://gopokaji.ru/*", "https://www.gopokaji.ru/*"],
       "js": ["content.js"],
-      "css": ["content.css"],
       "run_at": "document_idle"
     }
   ],

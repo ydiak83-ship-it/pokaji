@@ -7,8 +7,8 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1>Pokaji</h1>
-      <p class="subtitle">Покажи, а не рассказывай</p>
+      <h1>POKAJI</h1>
+      <p class="subtitle">v1.0 · Chrome</p>
     </div>
 
     <!-- Auth screen -->
@@ -19,6 +19,12 @@
 
     <!-- Main screen -->
     <div id="main-screen" class="screen hidden">
+      <div id="team-selector" class="team-selector hidden">
+        <label for="team-select">Загрузить в:</label>
+        <select id="team-select">
+          <option value="">Личные видео</option>
+        </select>
+      </div>
       <button id="btn-start" class="btn btn-primary btn-big">Начать запись</button>
       <div class="hotkey-hint">
         Горячая клавиша: <kbd>Alt + Shift + P</kbd>

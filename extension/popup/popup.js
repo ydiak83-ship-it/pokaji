@@ -29,6 +29,39 @@ function startTickingTimer(startedAt) {
   tickInterval = setInterval(tick, 500);
 }
 
+// Load teams for the team selector
+async function loadTeams(token) {
+  try {
+    const resp = await fetch(`${APP_URL}/api/teams`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return;
+    const teams = await resp.json();
+    if (teams.length > 0) {
+      const selector = document.getElementById("team-selector");
+      const select = document.getElementById("team-select");
+      teams.forEach((team) => {
+        const opt = document.createElement("option");
+        opt.value = team.slug;
+        opt.textContent = team.name;
+        select.appendChild(opt);
+      });
+      selector.classList.remove("hidden");
+
+      // Restore last selection
+      chrome.storage.local.get(["selectedTeamSlug"], (r) => {
+        if (r.selectedTeamSlug) select.value = r.selectedTeamSlug;
+      });
+
+      select.addEventListener("change", () => {
+        chrome.storage.local.set({ selectedTeamSlug: select.value });
+      });
+    }
+  } catch {
+    // Teams unavailable — skip
+  }
+}
+
 // Check state
 chrome.storage.local.get(["token", "recordingStartedAt"], (result) => {
   if (!result.token) {
@@ -41,6 +74,7 @@ chrome.storage.local.get(["token", "recordingStartedAt"], (result) => {
     return;
   }
   showScreen("main");
+  loadTeams(result.token);
 });
 
 document.getElementById("btn-login").addEventListener("click", () => {
